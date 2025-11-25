@@ -22,13 +22,15 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 CREATE TABLE IF NOT EXISTS tracks (
-  id TEXT PRIMARY KEY,          -- 'youtube:VIDEO_ID'
+  id TEXT PRIMARY KEY,          -- 'youtube:VIDEO_ID' 또는 임의의 seed id
   source TEXT NOT NULL,         -- 'YouTube'
   title TEXT NOT NULL,
   original_title TEXT NOT NULL,
   artist TEXT NOT NULL,
   thumb TEXT NOT NULL,
-  url TEXT NOT NULL
+  url TEXT NOT NULL,
+  genre TEXT NOT NULL,          -- kpop / jpop / pop / rock 등
+  nation TEXT NOT NULL          -- kr / jp / us / etc
 );
 
 CREATE TABLE IF NOT EXISTS track_moods (
@@ -77,57 +79,71 @@ CREATE TABLE IF NOT EXISTS watch_history (
 
 // --------------------
 // 더미 트랙 시드 데이터
+//  - 장르: kpop / jpop / pop / rock 등
+//  - nation: kr / jp / us / etc
+//  - mood: happy / sad / calm / angry / energetic
 // --------------------
 const seedTracks = [
+  // ───────── 기본 10곡 (기존) ─────────
   [
-    'youtube:dQw4w9WgXcQ',
+    'youtube:gdZLi9oWNZg',
     'YouTube',
-    'Rick Astley — Never Gonna Give You Up',
-    'Rick Astley - Never Gonna Give You Up (Official Music Video)',
-    'Rick Astley',
-    'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
-    'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-    ['energetic', 'happy']
+    "BTS — Dynamite",
+    "BTS (방탄소년단) 'Dynamite' Official MV",
+    'BTS',
+    'https://i.ytimg.com/vi/gdZLi9oWNZg/hqdefault.jpg',
+    'https://www.youtube.com/watch?v=gdZLi9oWNZg',
+    ['happy', 'energetic'],
+    'kpop',
+    'kr'
   ],
   [
-    'youtube:ktvTqknDobU',
+    'youtube:6eEZ7DJMzuk',
     'YouTube',
-    'Queen — Bohemian Rhapsody',
-    'Queen – Bohemian Rhapsody (Official Video Remastered)',
-    'Queen',
-    'https://i.ytimg.com/vi/ktvTqknDobU/hqdefault.jpg',
-    'https://www.youtube.com/watch?v=ktvTqknDobU',
-    ['energetic', 'sad']
+    "IVE — LOVE DIVE",
+    "IVE 아이브 'LOVE DIVE' MV",
+    'IVE',
+    'https://i.ytimg.com/vi/6eEZ7DJMzuk/hqdefault.jpg',
+    'https://www.youtube.com/watch?v=6eEZ7DJMzuk',
+    ['happy', 'energetic'],
+    'kpop',
+    'kr'
   ],
   [
-    'youtube:Zi_XLOBDo_Y',
+    'youtube:TQ8WlA2GXbk',
     'YouTube',
-    'Adele — Someone Like You',
-    'Adele - Someone Like You (Official Music Video)',
-    'Adele',
-    'https://i.ytimg.com/vi/Zi_XLOBDo_Y/hqdefault.jpg',
-    'https://www.youtube.com/watch?v=Zi_XLOBDo_Y',
-    ['sad', 'calm']
+    'Official髭男dism — Pretender',
+    'Official髭男dism - Pretender [Official Video]',
+    'Official髭男dism',
+    'https://i.ytimg.com/vi/TQ8WlA2GXbk/hqdefault.jpg',
+    'https://www.youtube.com/watch?v=TQ8WlA2GXbk',
+    ['sad', 'calm'],
+    'jpop',
+    'jp'
   ],
   [
-    'youtube:fLexgOxsZu0',
+    'youtube:Q6iK6DjV_iE',
     'YouTube',
-    'Pharrell Williams — Happy',
-    'Pharrell Williams - Happy (Official Music Video)',
-    'Pharrell Williams',
-    'https://i.ytimg.com/vi/fLexgOxsZu0/hqdefault.jpg',
-    'https://www.youtube.com/watch?v=fLexgOxsZu0',
-    ['happy', 'energetic']
+    'YOASOBI — 夜に駆ける',
+    'YOASOBI「夜に駆ける」Official Music Video',
+    'YOASOBI',
+    'https://i.ytimg.com/vi/Q6iK6DjV_iE/hqdefault.jpg',
+    'https://www.youtube.com/watch?v=Q6iK6DjV_iE',
+    ['energetic'],
+    'jpop',
+    'jp'
   ],
   [
-    'youtube:V1Pl8CzNzCw',
+    'youtube:8xg3vE8Ie_E',
     'YouTube',
-    'Billie Eilish — bad guy',
-    'Billie Eilish - bad guy',
-    'Billie Eilish',
-    'https://i.ytimg.com/vi/V1Pl8CzNzCw/hqdefault.jpg',
-    'https://www.youtube.com/watch?v=V1Pl8CzNzCw',
-    ['angry', 'energetic']
+    'Taylor Swift — Love Story',
+    'Taylor Swift - Love Story',
+    'Taylor Swift',
+    'https://i.ytimg.com/vi/8xg3vE8Ie_E/hqdefault.jpg',
+    'https://www.youtube.com/watch?v=8xg3vE8Ie_E',
+    ['happy', 'calm'],
+    'pop',
+    'us'
   ],
   [
     'youtube:RBumgq5yVrA',
@@ -137,7 +153,9 @@ const seedTracks = [
     'Ed Sheeran',
     'https://i.ytimg.com/vi/RBumgq5yVrA/hqdefault.jpg',
     'https://www.youtube.com/watch?v=RBumgq5yVrA',
-    ['calm', 'sad']
+    ['sad', 'calm'],
+    'pop',
+    'uk'
   ],
   [
     'youtube:OPf0YbXqDm0',
@@ -147,17 +165,21 @@ const seedTracks = [
     'Mark Ronson',
     'https://i.ytimg.com/vi/OPf0YbXqDm0/hqdefault.jpg',
     'https://www.youtube.com/watch?v=OPf0YbXqDm0',
-    ['energetic', 'happy']
+    ['energetic', 'happy'],
+    'pop',
+    'us'
   ],
   [
-    'youtube:hLQl3WQQoQ0',
+    'youtube:d9h2oQxQv0c',
     'YouTube',
-    'Adele — Someone Like You (Live at BRIT)',
-    'Adele - Someone Like You (BRIT Awards 2011) Performance',
-    'Adele',
-    'https://i.ytimg.com/vi/hLQl3WQQoQ0/hqdefault.jpg',
-    'https://www.youtube.com/watch?v=hLQl3WQQoQ0',
-    ['sad']
+    'IU — Palette (feat. G-DRAGON)',
+    'IU(아이유) _ Palette(팔레트) (Feat. G-DRAGON) MV',
+    'IU',
+    'https://i.ytimg.com/vi/d9h2oQxQv0c/hqdefault.jpg',
+    'https://www.youtube.com/watch?v=d9h2oQxQv0c',
+    ['calm', 'happy'],
+    'kpop',
+    'kr'
   ],
   [
     'youtube:pXRviuL6vMY',
@@ -167,14 +189,212 @@ const seedTracks = [
     'twenty one pilots',
     'https://i.ytimg.com/vi/pXRviuL6vMY/hqdefault.jpg',
     'https://www.youtube.com/watch?v=pXRviuL6vMY',
-    ['angry', 'sad']
+    ['angry', 'sad'],
+    'rock',
+    'us'
+  ],
+  [
+    'youtube:tAGnKpE4NCI',
+    'YouTube',
+    'Metallica — Nothing Else Matters',
+    'Metallica: Nothing Else Matters (Official Music Video)',
+    'Metallica',
+    'https://i.ytimg.com/vi/tAGnKpE4NCI/hqdefault.jpg',
+    'https://www.youtube.com/watch?v=tAGnKpE4NCI',
+    ['calm', 'sad'],
+    'rock',
+    'us'
+  ],
+
+  // ───────── 여기서부터 추가 더미 (심리테스트용 풀 확장) ─────────
+  // 기본 전략:
+  //  - 열정/자기계발/힘이 나는 → energetic + (happy/angry) 많이 배치
+  //  - J-POP 쪽은 genre: 'jpop', nation: 'jp'
+  //  - 실제 재생은 url 기준이라, 이미 있는 MV들을 재사용해도 동작은 OK
+
+  // 🔥 energetic + jpop (열정/자기계발 분위기 보강)
+  [
+    'seed:jpop_energy_01',
+    'YouTube',
+    'YOASOBI — 夜に駆ける (Energy Ver.)',
+    'YOASOBI「夜に駆ける」Official Music Video',
+    'YOASOBI',
+    'https://i.ytimg.com/vi/Q6iK6DjV_iE/hqdefault.jpg',
+    'https://www.youtube.com/watch?v=Q6iK6DjV_iE',
+    ['energetic', 'happy'],
+    'jpop',
+    'jp'
+  ],
+  [
+    'seed:jpop_energy_02',
+    'YouTube',
+    'YOASOBI — 夜に駆ける (Motivation Ver.)',
+    'YOASOBI「夜に駆ける」Official Music Video',
+    'YOASOBI',
+    'https://i.ytimg.com/vi/Q6iK6DjV_iE/hqdefault.jpg',
+    'https://www.youtube.com/watch?v=Q6iK6DjV_iE',
+    ['energetic', 'angry'],
+    'jpop',
+    'jp'
+  ],
+  [
+    'seed:jpop_energy_03',
+    'YouTube',
+    'Official髭男dism — Pretender (Upbeat Arrange)',
+    'Official髭男dism - Pretender [Official Video]',
+    'Official髭男dism',
+    'https://i.ytimg.com/vi/TQ8WlA2GXbk/hqdefault.jpg',
+    'https://www.youtube.com/watch?v=TQ8WlA2GXbk',
+    ['energetic', 'happy'],
+    'jpop',
+    'jp'
+  ],
+  [
+    'seed:jpop_energy_04',
+    'YouTube',
+    'Official髭男dism — Pretender (Study Motivation)',
+    'Official髭男dism - Pretender [Official Video]',
+    'Official髭男dism',
+    'https://i.ytimg.com/vi/TQ8WlA2GXbk/hqdefault.jpg',
+    'https://www.youtube.com/watch?v=TQ8WlA2GXbk',
+    ['energetic', 'calm'],
+    'jpop',
+    'jp'
+  ],
+  [
+    'seed:jpop_energy_05',
+    'YouTube',
+    'J-ENERGY — Focus & Grind',
+    'YOASOBI「夜に駆ける」Official Music Video',
+    'J-ENERGY',
+    'https://i.ytimg.com/vi/Q6iK6DjV_iE/hqdefault.jpg',
+    'https://www.youtube.com/watch?v=Q6iK6DjV_iE',
+    ['energetic', 'angry'],
+    'jpop',
+    'jp'
+  ],
+
+  // 😀 happy 쪽 보강
+  [
+    'seed:happy_kpop_01',
+    'YouTube',
+    'BTS — Dynamite (Happy Morning Ver.)',
+    "BTS (방탄소년단) 'Dynamite' Official MV",
+    'BTS',
+    'https://i.ytimg.com/vi/gdZLi9oWNZg/hqdefault.jpg',
+    'https://www.youtube.com/watch?v=gdZLi9oWNZg',
+    ['happy'],
+    'kpop',
+    'kr'
+  ],
+  [
+    'seed:happy_kpop_02',
+    'YouTube',
+    'IVE — LOVE DIVE (Bright Ver.)',
+    "IVE 아이브 'LOVE DIVE' MV",
+    'IVE',
+    'https://i.ytimg.com/vi/6eEZ7DJMzuk/hqdefault.jpg',
+    'https://www.youtube.com/watch?v=6eEZ7DJMzuk',
+    ['happy', 'energetic'],
+    'kpop',
+    'kr'
+  ],
+  [
+    'seed:happy_pop_01',
+    'YouTube',
+    'Love Story — Road Trip Ver.',
+    'Taylor Swift - Love Story',
+    'Taylor Swift',
+    'https://i.ytimg.com/vi/8xg3vE8Ie_E/hqdefault.jpg',
+    'https://www.youtube.com/watch?v=8xg3vE8Ie_E',
+    ['happy', 'calm'],
+    'pop',
+    'us'
+  ],
+
+  // 😢 sad 쪽 보강
+  [
+    'seed:sad_pop_01',
+    'YouTube',
+    'Photograph — Late Night Ver.',
+    'Ed Sheeran - Photograph (Official Music Video)',
+    'Ed Sheeran',
+    'https://i.ytimg.com/vi/RBumgq5yVrA/hqdefault.jpg',
+    'https://www.youtube.com/watch?v=RBumgq5yVrA',
+    ['sad', 'calm'],
+    'pop',
+    'uk'
+  ],
+  [
+    'seed:sad_rock_01',
+    'YouTube',
+    'Nothing Else Matters — Rainy Day Ver.',
+    'Metallica: Nothing Else Matters (Official Music Video)',
+    'Metallica',
+    'https://i.ytimg.com/vi/tAGnKpE4NCI/hqdefault.jpg',
+    'https://www.youtube.com/watch?v=tAGnKpE4NCI',
+    ['sad', 'calm'],
+    'rock',
+    'us'
+  ],
+
+  // 😡 angry / 열받을 때 듣는 락
+  [
+    'seed:angry_rock_01',
+    'YouTube',
+    'Stressed Out — Rage Ver.',
+    'twenty one pilots: Stressed Out [OFFICIAL VIDEO]',
+    'twenty one pilots',
+    'https://i.ytimg.com/vi/pXRviuL6vMY/hqdefault.jpg',
+    'https://www.youtube.com/watch?v=pXRviuL6vMY',
+    ['angry', 'energetic'],
+    'rock',
+    'us'
+  ],
+  [
+    'seed:angry_rock_02',
+    'YouTube',
+    'Nothing Else Matters — Heavy Mood',
+    'Metallica: Nothing Else Matters (Official Music Video)',
+    'Metallica',
+    'https://i.ytimg.com/vi/tAGnKpE4NCI/hqdefault.jpg',
+    'https://www.youtube.com/watch?v=tAGnKpE4NCI',
+    ['angry', 'sad'],
+    'rock',
+    'us'
+  ],
+
+  // 😌 calm / 힐링용 보강
+  [
+    'seed:calm_kpop_01',
+    'YouTube',
+    'IU — Palette (Night Chill Ver.)',
+    'IU(아이유) _ Palette(팔레트) (Feat. G-DRAGON) MV',
+    'IU',
+    'https://i.ytimg.com/vi/d9h2oQxQv0c/hqdefault.jpg',
+    'https://www.youtube.com/watch?v=d9h2oQxQv0c',
+    ['calm'],
+    'kpop',
+    'kr'
+  ],
+  [
+    'seed:calm_pop_01',
+    'YouTube',
+    'Love Story — Calm Piano Ver.',
+    'Taylor Swift - Love Story',
+    'Taylor Swift',
+    'https://i.ytimg.com/vi/8xg3vE8Ie_E/hqdefault.jpg',
+    'https://www.youtube.com/watch?v=8xg3vE8Ie_E',
+    ['calm'],
+    'pop',
+    'us'
   ]
 ];
 
 const insertTrack = db.prepare(`
   INSERT OR IGNORE INTO tracks
-  (id, source, title, original_title, artist, thumb, url)
-  VALUES (?, ?, ?, ?, ?, ?, ?)
+  (id, source, title, original_title, artist, thumb, url, genre, nation)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 const insertMood = db.prepare(`
@@ -183,8 +403,8 @@ const insertMood = db.prepare(`
 `);
 
 for (const t of seedTracks) {
-  const [id, source, title, original_title, artist, thumb, url, moods] = t;
-  insertTrack.run(id, source, title, original_title, artist, thumb, url);
+  const [id, source, title, original_title, artist, thumb, url, moods, genre, nation] = t;
+  insertTrack.run(id, source, title, original_title, artist, thumb, url, genre, nation);
   moods.forEach(m => insertMood.run(id, m));
 }
 
