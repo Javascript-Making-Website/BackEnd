@@ -18,7 +18,9 @@ PRAGMA journal_mode = WAL;
 
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT UNIQUE NOT NULL
+  username TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  email TEXT
 );
 
 CREATE TABLE IF NOT EXISTS tracks (
@@ -66,6 +68,16 @@ CREATE TABLE IF NOT EXISTS playlist_items (
   PRIMARY KEY (playlist_id, track_id),
   FOREIGN KEY (playlist_id) REFERENCES playlists(id),
   FOREIGN KEY (track_id) REFERENCES tracks(id)
+);
+
+-- ⭐ 재생목록 좋아요 테이블 (새로 추가)
+CREATE TABLE IF NOT EXISTS playlist_likes (
+  user_id INTEGER NOT NULL,
+  playlist_id INTEGER NOT NULL,
+  created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+  PRIMARY KEY (user_id, playlist_id),
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (playlist_id) REFERENCES playlists(id)
 );
 
 CREATE TABLE IF NOT EXISTS watch_history (
