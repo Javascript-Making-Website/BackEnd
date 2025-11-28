@@ -43,13 +43,13 @@ CREATE TABLE IF NOT EXISTS track_moods (
 );
 
 CREATE TABLE IF NOT EXISTS ratings (
-  user_id INTEGER NOT NULL,
-  track_id TEXT NOT NULL,
-  mood TEXT NOT NULL,
+  user_id   INTEGER NOT NULL,
+  track_id  TEXT    NOT NULL,
+  mood      TEXT    NOT NULL,
   created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
-  PRIMARY KEY (user_id, track_id),
-  FOREIGN KEY (user_id) REFERENCES users(id),
-  FOREIGN KEY (track_id) REFERENCES tracks(id)
+  PRIMARY KEY (user_id, track_id),      -- ★ 복합 PK
+  FOREIGN KEY (user_id) REFERENCES users(id)
+  -- track_id 쪽 FK는 일부러 안 건다 (YouTube 실시간 곡도 저장해야 하니까)
 );
 
 CREATE TABLE IF NOT EXISTS playlists (
@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS playlists (
   user_id INTEGER NOT NULL,
   title TEXT NOT NULL,
   is_public INTEGER NOT NULL DEFAULT 0,
+  theme_color TEXT NOT NULL DEFAULT '#22d3ee',
   created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
@@ -66,8 +67,7 @@ CREATE TABLE IF NOT EXISTS playlist_items (
   track_id TEXT NOT NULL,
   position INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (playlist_id, track_id),
-  FOREIGN KEY (playlist_id) REFERENCES playlists(id),
-  FOREIGN KEY (track_id) REFERENCES tracks(id)
+  FOREIGN KEY (playlist_id) REFERENCES playlists(id)
 );
 
 -- ⭐ 재생목록 좋아요 테이블 (새로 추가)
@@ -81,11 +81,21 @@ CREATE TABLE IF NOT EXISTS playlist_likes (
 );
 
 CREATE TABLE IF NOT EXISTS watch_history (
-  user_id INTEGER NOT NULL,
-  track_id TEXT NOT NULL,
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id   INTEGER NOT NULL,
+  track_id  TEXT    NOT NULL,
   played_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
-  FOREIGN KEY (user_id) REFERENCES users(id),
-  FOREIGN KEY (track_id) REFERENCES tracks(id)
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+-- ▶ 새로 추가: 스킵 기록
+CREATE TABLE IF NOT EXISTS skips (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id   INTEGER NOT NULL,
+  track_id  TEXT    NOT NULL,
+  seconds   INTEGER NOT NULL,
+  created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+  FOREIGN KEY (user_id) REFERENCES users(id)
 );
 `);
 

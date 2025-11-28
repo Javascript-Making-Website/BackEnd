@@ -8,6 +8,18 @@ import db from './db.js';
 const app = express();
 
 // ───────────────────────────────────────────────────────────────
+// 아티스트 유사도 맵 (간단 하드코딩)
+// ───────────────────────────────────────────────────────────────
+const SIMILAR_ARTISTS = {
+  'YOASOBI': ['Aimer', 'ずっと真夜中でいいのに。', 'ZUTOMAYO', '緑黄色社会'],
+  'Official髭男dism': ['back number', 'Mrs. GREEN APPLE', 'King Gnu'],
+  'BTS': ['SEVENTEEN', 'TXT', 'Stray Kids', 'ENHYPEN'],
+  'IVE': ['NewJeans', 'LE SSERAFIM', 'STAYC'],
+  'IU': ['태연', 'AKMU', '볼빨간사춘기'],
+  'Metallica': ['Megadeth', 'Iron Maiden', 'Slayer'],
+};
+
+// ───────────────────────────────────────────────────────────────
 // YouTube API 설정
 // ───────────────────────────────────────────────────────────────
 const YT_KEY = process.env.YT_API_KEY || '';
@@ -26,19 +38,85 @@ if (!YT_KEY) {
 // ───────────────────────────────────────────────────────────────
 
 // mood / genre / nation → 검색 키워드 만들어주는 헬퍼
-function buildYtQuery({ mood, genre, nation }) {
+function buildYtQuery({ mood, genre, nation, subEmotion, tone }) {
   const words = [];
 
-  if (mood === 'happy') words.push('happy', 'feel good');
-  else if (mood === 'sad') words.push('sad', 'ballad');
+  // 기본 mood → 키워드
+  if (mood === 'happy')      words.push('happy', 'feel good');
+  else if (mood === 'sad')   words.push('sad', 'ballad');
   else if (mood === 'angry') words.push('rock', 'angry', 'hard');
-  else if (mood === 'calm') words.push('relax', 'chill', 'calm');
+  else if (mood === 'calm')  words.push('relax', 'chill', 'calm');
   else if (mood === 'energetic') words.push('upbeat', 'energy');
 
+  // ★ 세부 감정 코드/문구에 따른 추가 키워드
+  const se = (subEmotion || '').toLowerCase();
+
+  if (se) {
+    // 코드 기준
+    if (se.includes('in_love') || /사랑/.test(subEmotion)) {
+      words.push('love song', 'romantic', 'ballad');
+    }
+    if (se.includes('travel') || /여행/.test(subEmotion)) {
+      words.push('road trip', 'driving song', 'travel music');
+    }
+    if (se.includes('excited') || /신난다/.test(subEmotion)) {
+      words.push('upbeat', 'dance', 'party');
+    }
+
+    if (se.includes('lonely') || /외로움/.test(subEmotion) || /그립다/.test(subEmotion)) {
+      words.push('lonely', 'sad song', 'emotional ballad');
+    }
+    if (se.includes('drained') || /아무것도 하기 싫다/.test(subEmotion)) {
+      words.push('chill', 'lofi', 'relaxing');
+    }
+
+    if (se.includes('unfair') || se.includes('annoyed') || se.includes('rage') ||
+        /억울/.test(subEmotion) || /짜증/.test(subEmotion) || /스트레스를 풀고 싶다/.test(subEmotion)) {
+      words.push('rock', 'metal', 'angry music');
+    }
+
+    if (se.includes('rest') || se.includes('organize') || se.includes('reflect') ||
+        /쉬고 싶다/.test(subEmotion) || /차분하게 정리/.test(subEmotion) || /앞으로를 생각/.test(subEmotion)) {
+      words.push('relaxing', 'acoustic', 'piano');
+    }
+
+    if (se.includes('achieve') || se.includes('explosion') || se.includes('selfdev') ||
+        /해내고 싶다/.test(subEmotion) || /열정이 폭발/.test(subEmotion) || /자기계발/.test(subEmotion)) {
+      words.push('motivation song', 'inspirational', 'energetic');
+    }
+  }
+
+    // ── tone(음악 분위기)에 따른 추가 키워드 ───────────────
+  if (tone === 'boost') {
+    // 기분을 더 끌어올리고 싶은 느낌
+    words.push('feel good', 'uplifting', 'anthem');
+  } else if (tone === 'soothe') {
+    // 달래주는/위로
+    words.push('acoustic', 'piano', 'healing', 'calm');
+  } else if (tone === 'energy') {
+    // 힘이 나는 / 운동용
+    words.push('upbeat', 'high energy', 'fast tempo', 'workout');
+  } else if (tone === 'breeze') {
+    // 아무 생각 없이 듣는
+    words.push('chill', 'background music', 'easy listening');
+  } else if (tone === 'focus') {
+    // 집중용
+    words.push('lofi', 'study music', 'concentration');
+  }
+
+
+  // 장르 / 국가 쪽 기존 로직 + 확장 키워드
   if (genre === 'kpop' || nation === 'kr') {
-    words.push('K-POP', 'kpop', 'Korean');
+    words.push(
+      'K-POP', 'kpop', 'Korean',
+      'idol', '아이돌',
+      'dance practice', 'performance video', 'MV'
+    );
   } else if (genre === 'jpop' || nation === 'jp') {
-    words.push('J-POP', 'jpop', 'Japanese', '日本', 'ジャパン', '音楽');
+    words.push(
+      'J-POP', 'jpop', 'Japanese', '日本', 'ジャパン', '音楽',
+      'アニメ', 'anime song', 'ボカロ', 'vocaloid'
+    );
   } else if (genre === 'rock') {
     words.push('rock', 'metal');
   } else {
@@ -59,28 +137,105 @@ function buildFallbackQueries({ mood, genre, nation, baseQuery }) {
   const noMv = stripOfficialMvKeyword(baseQuery);
   if (noMv) qs.push(noMv);
 
-  if (genre === 'jpop' || nation === 'jp') {
+  const g =
+    genre ||
+    (nation === 'jp' ? 'jpop'
+     : nation === 'kr' ? 'kpop'
+     : null);
+
+  // 1) J-POP (기존 로직 유지 + 정리)
+  if (g === 'jpop' || nation === 'jp') {
     if (mood === 'energetic' || mood === 'angry') {
-      qs.push('J-POP 元気 ソング');
-      qs.push('JPOP アップテンポ 曲');
-      qs.push('Japanese rock upbeat');
-      qs.push('日本 モチベーション 曲');
+      qs.push(
+        'J-POP 元気 ソング',
+        'JPOP アップテンポ 曲',
+        'Japanese rock upbeat',
+        '日本 モチベーション 曲'
+      );
     } else if (mood === 'happy') {
-      qs.push('J-POP ハッピー ソング');
-      qs.push('JPOP pop song');
-      qs.push('日本 明るい 曲');
+      qs.push(
+        'J-POP ハッピー ソング',
+        'JPOP pop song',
+        '日本 明るい 曲'
+      );
     } else if (mood === 'sad') {
-      qs.push('J-POP バラード');
-      qs.push('日本 切ない 曲');
+      qs.push(
+        'J-POP バラード',
+        '日本 切ない 曲'
+      );
     } else if (mood === 'calm') {
-      qs.push('J-POP 癒し ソング');
-      qs.push('日本 リラックス 音楽');
+      qs.push(
+        'J-POP 癒し ソング',
+        '日本 リラックス 音楽'
+      );
+    }
+  }
+  // 2) K-POP
+  else if (g === 'kpop' || nation === 'kr') {
+    if (mood === 'energetic' || mood === 'happy') {
+      qs.push(
+        'K-POP 댄스곡',
+        'kpop upbeat songs',
+        '아이돌 댄스 노래'
+      );
+    } else if (mood === 'sad' || mood === 'calm') {
+      qs.push(
+        'K-POP 발라드',
+        'kpop ballad',
+        '슬픈 발라드 추천'
+      );
+    } else if (mood === 'angry') {
+      qs.push(
+        'K-POP rock band',
+        'kpop 밴드 사운드'
+      );
+    }
+  }
+  // 3) ROCK / METAL
+  else if (g === 'rock') {
+    if (mood === 'happy' || mood === 'energetic') {
+      qs.push(
+        'upbeat rock songs',
+        'motivational rock music',
+        'fast rock metal'
+      );
+    } else if (mood === 'sad' || mood === 'calm') {
+      qs.push(
+        'rock ballad songs',
+        'emotional rock ballad'
+      );
+    } else if (mood === 'angry') {
+      qs.push(
+        'angry rock songs',
+        'heavy metal songs'
+      );
+    }
+  }
+  // 4) 그 외 POP / GLOBAL
+  else {
+    if (mood === 'happy' || mood === 'energetic') {
+      qs.push(
+        'feel good pop songs',
+        'upbeat pop music'
+      );
+    } else if (mood === 'sad' || mood === 'calm') {
+      qs.push(
+        'sad pop ballad',
+        'emotional pop songs'
+      );
+    } else if (mood === 'angry') {
+      qs.push(
+        'angry alternative rock',
+        'dark pop rock'
+      );
     }
   }
 
+  // 아무 것도 못 만들었으면 원래 쿼리라도 다시 한 번
   if (!qs.length && baseQuery) qs.push(baseQuery);
   return [...new Set(qs)].filter(Boolean);
 }
+
 
 function mapYtItemToTrack(item) {
   const id = item.id?.videoId;
@@ -117,6 +272,50 @@ function isPlaylistLike(track) {
   if (/\btop\s?\d+\b/.test(t)) return true;
   if (/\b\d+\s*(songs|tracks|hits)\b/.test(t)) return true;
 
+
+   // -----------------------------
+  // ★ 랜덤플레이 / 챌린지 / 직캠 / 댄스 영상 제거
+  // -----------------------------
+  if (t.includes('random play dance')) return true;
+  if (t.includes('랜덤플레이')) return true;
+  if (t.includes('랜덤플레이댄스')) return true;
+  if (t.includes('randplay')) return true;
+  if (t.includes('랜플')) return true;
+
+  if (t.includes('challenge')) return true;
+  if (t.includes('챌린지')) return true;
+
+  if (t.includes('dance')) return true;
+  if (t.includes('안무')) return true;
+  if (t.includes('댄스')) return true;
+
+  if (t.includes('직캠')) return true;
+  if (t.includes('풀캠')) return true;
+  if (t.includes('fancam')) return true;
+
+  if (t.includes('KBS')) return true;
+  if (t.includes('SBS')) return true;
+  if (t.includes('MBC')) return true;
+  if (t.includes('스브스')) return true;
+  if (t.includes('SM C&C Entertainment')) return true;
+
+  if (t.includes('practice')) return true;
+  if (t.includes('연습실')) return true;
+  if (t.includes('practice video')) return true;
+
+  if (t.includes('live')) return true;
+  if (t.includes('performance')) return true;
+  if (t.includes('공연')) return true;
+
+  if (t.includes('cover')) return true;
+  if (t.includes('커버')) return true;
+
+  // 일본어 버전도 같이 차단
+  if (t.includes('ダンス')) return true;
+  if (t.includes('ライブ')) return true;
+  if (t.includes('カバー')) return true;
+  if (t.includes('パフォーマンス')) return true;
+  
   if (t.includes('bgm')) return true;
   if (t.includes('study music') || t.includes('study playlist')) return true;
   if (t.includes('sleep') && t.includes('music')) return true;
@@ -285,6 +484,8 @@ async function searchYouTubeTracks({
   mood,
   genre,
   nation,
+  subEmotion,
+  tone,
   limit = 20,
   qOverride,
   pageToken,
@@ -294,7 +495,7 @@ async function searchYouTubeTracks({
     throw new Error('YT_API disabled or quota exceeded');
   }
 
-  const baseQuery = qOverride || buildYtQuery({ mood, genre, nation });
+  const baseQuery = qOverride || buildYtQuery({ mood, genre, nation, subEmotion, tone });
   const maxResults = Math.min(limit * 3, 50);
 
   const data = await runYtSearch({
@@ -407,7 +608,7 @@ const corsOptions = {
     return cb(new Error(`CORS blocked: ${origin}`), false);
   },
   credentials: true,
-  methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type'],
 };
 app.use(cors(corsOptions));
@@ -537,58 +738,61 @@ app.get('/api/me', (req, res) => {
 // 검색 & 추천
 // ───────────────────────────────────────────────────────────────
 app.get('/api/search', async (req, res) => {
-  const qRaw = (req.query.q || '').toString();
-  const mood = (req.query.mood || '').toString() || null;
-  const genre = (req.query.genre || '').toString() || null;
-  const nation = (req.query.nation || '').toString() || null;
+  const qRaw      = (req.query.q      || '').toString();
+  const mood      = (req.query.mood   || '').toString() || null;
+  const genre     = (req.query.genre  || '').toString() || null;
+  const nation    = (req.query.nation || '').toString() || null;
   const pageToken = (req.query.pageToken || '').toString() || null;
 
-  const hasFilterOnly = !qRaw && (mood || genre || nation);
+  // 감정 테스트에서 넘어오는 tone / sub 도 같이 받으려면 (선택)
+  const subEmotion = (req.query.sub   || '').toString() || null;
+  const tone       = (req.query.tone  || '').toString() || null;
 
-  if (YT_KEY && !YT_QUOTA_EXCEEDED && (qRaw || genre || nation || mood)) {
+  // ─────────────────────────────────────
+  // 1) YouTube 우선 (항상 rich: false = 페이지네이션 모드)
+  // ─────────────────────────────────────
+  if (YT_KEY && !YT_QUOTA_EXCEEDED && (qRaw || mood || genre || nation || subEmotion || tone)) {
     try {
+      const opts = {
+        mood,
+        genre,
+        nation,
+        subEmotion,
+        tone,
+        limit: 50,
+        rich: false,          // ★ 검색은 항상 페이지네이션 모드
+        pageToken,
+      };
+
       if (qRaw) {
-        const { items, nextPageToken } = await searchYouTubeTracks({
-          mood,
-          genre,
-          nation,
-          limit: 50,
-          qOverride: qRaw,
-          pageToken,
-          rich: false,
-        });
+        // 검색어가 있을 때만 qOverride 사용
+        opts.qOverride = qRaw;
+      }
 
-        if (items && items.length) {
-          return res.json({ items, nextPageToken });
-        }
-      } else if (hasFilterOnly) {
-        const { items } = await searchYouTubeTracks({
-          mood,
-          genre,
-          nation,
-          limit: 50,
-          rich: true,
-        });
+      const { items, nextPageToken } = await searchYouTubeTracks(opts);
 
-        if (items && items.length) {
-          return res.json({ items, nextPageToken: null });
-        }
+      if (items && items.length) {
+        return res.json({
+          items,
+          nextPageToken: nextPageToken || null,  // 그대로 프론트로
+        });
       }
     } catch (e) {
       console.error('/api/search YouTube 실패, DB로 폴백:', e);
     }
   }
 
+  // ─────────────────────────────────────
+  // 2) DB 폴백 (예전 로직 그대로, 여기서는 pageToken 없음)
+  // ─────────────────────────────────────
   const q = qRaw.toLowerCase();
   const rows = db
-    .prepare(
-      `
-    SELECT t.*, GROUP_CONCAT(tm.mood) AS moods
-    FROM tracks t
-    LEFT JOIN track_moods tm ON tm.track_id = t.id
-    GROUP BY t.id
-  `,
-    )
+    .prepare(`
+      SELECT t.*, GROUP_CONCAT(tm.mood) AS moods
+      FROM tracks t
+      LEFT JOIN track_moods tm ON tm.track_id = t.id
+      GROUP BY t.id
+    `)
     .all();
 
   const filtered = rows.filter((r) => {
@@ -603,63 +807,227 @@ app.get('/api/search', async (req, res) => {
   res.json({ items: filtered, nextPageToken: null });
 });
 
-app.get('/api/recs', async (req, res) => {
-  const mood = (req.query.mood || '').toString() || null;
-  const genre = (req.query.genre || '').toString() || null;
-  const nation = (req.query.nation || '').toString() || null;
-  const user = getUser(req);
-  const uid = user?.id;
 
+app.get('/api/recs', async (req, res) => {
+  const mood   = (req.query.mood   || '').toString() || null;  // 감정 테스트 결과 mood
+  const genre  = (req.query.genre  || '').toString() || null;
+  const nation = (req.query.nation || '').toString() || null;
+  const sub    = (req.query.sub    || '').toString() || null;
+  const tone   = (req.query.tone   || '').toString() || null;
+  const user   = getUser(req);
+  const uid    = user?.id;
+
+  // ───────────────────── 1) 유저 개인 히스토리 분석
+  let trendMood = null;          // 최근 감정 경향 (1번 + 6번)
+  let watchCountMap = {};        // 트랙별 시청 횟수 (2번)
+  let ratingsMap = {};           // 트랙별 감정 평가 (2번)
+  let skipMap = {};              // 스킵 패널티 (3번)
+  let topArtist = null;          // 제일 많이 들은 아티스트 (5번)
+  let similarArtistSet = new Set();
+
+  if (uid) {
+    // 최근 시청 40개 기준으로 mood / artist 통계
+    const recent = db.prepare(`
+      SELECT
+        wh.track_id,
+        tm.mood       AS track_mood,
+        t.artist      AS artist
+      FROM watch_history wh
+      LEFT JOIN track_moods tm ON tm.track_id = wh.track_id
+      LEFT JOIN tracks      t  ON t.id        = wh.track_id
+      WHERE wh.user_id = ?
+      ORDER BY wh.played_at DESC
+      LIMIT 40
+    `).all(uid);
+
+    const moodCounts   = {};
+    const artistCounts = {};
+
+    for (const r of recent) {
+      if (r.track_mood) {
+        moodCounts[r.track_mood] = (moodCounts[r.track_mood] || 0) + 1;
+      }
+      if (r.artist) {
+        artistCounts[r.artist] = (artistCounts[r.artist] || 0) + 1;
+      }
+      if (r.track_id) {
+        watchCountMap[r.track_id] = (watchCountMap[r.track_id] || 0) + 1;
+      }
+    }
+
+    // trendMood = 최근에 가장 많이 들은 감정 (최소 3회 이상일 때만 신뢰)
+    let bestMood = null;
+    let bestCnt  = 0;
+    for (const [m, c] of Object.entries(moodCounts)) {
+      if (c > bestCnt) {
+        bestMood = m;
+        bestCnt  = c;
+      }
+    }
+    if (bestCnt >= 3) {
+      trendMood = bestMood;
+    }
+
+    // topArtist = 가장 많이 들은 아티스트
+    let bestArtist = null;
+    let bestArtistCnt = 0;
+    for (const [a, c] of Object.entries(artistCounts)) {
+      if (c > bestArtistCnt) {
+        bestArtist    = a;
+        bestArtistCnt = c;
+      }
+    }
+    topArtist = bestArtist || null;
+
+    if (topArtist && SIMILAR_ARTISTS[topArtist]) {
+      SIMILAR_ARTISTS[topArtist].forEach((name) => similarArtistSet.add(name));
+    }
+
+    // 사용자가 직접 남긴 감정 평가
+    db.prepare('SELECT track_id, mood FROM ratings WHERE user_id = ?')
+      .all(uid)
+      .forEach((r) => { ratingsMap[r.track_id] = r.mood; });
+
+    // 스킵 기록 (몇 번이나 스킵했는지)
+    db.prepare(`
+      SELECT track_id, COUNT(*) AS cnt
+      FROM skips
+      WHERE user_id = ?
+      GROUP BY track_id
+    `).all(uid).forEach((r) => {
+      skipMap[r.track_id] = r.cnt;
+    });
+  }
+
+  // 감정 테스트 결과(mood)와 실제 듣는 경향(trendMood)을 섞어서 사용할 mood
+  const effectiveMood = mood || trendMood || null;
+
+  // ───────────────────── 2) YouTube에서 후보 가져오기
+  let ytItems = [];
   if (YT_KEY && !YT_QUOTA_EXCEEDED) {
     try {
       const { items } = await searchYouTubeTracks({
-        mood,
+        mood: effectiveMood,
         genre,
         nation,
+        subEmotion: sub,
+        tone,
         limit: 20,
         rich: true,
       });
-
-      if (items && items.length) {
-        return res.json({ items });
-      }
+      ytItems = items || [];
     } catch (e) {
-      console.error('/api/recs YouTube 실패, DB로 폴백:', e);
+      console.error('/api/recs YouTube 실패, DB로 폴백 준비:', e);
     }
   }
 
-  const rows = db
-    .prepare(
-      `
-      SELECT t.*, GROUP_CONCAT(tm.mood) AS moods
-      FROM tracks t
-      LEFT JOIN track_moods tm ON tm.track_id = t.id
-      GROUP BY t.id
-    `,
-    )
-    .all();
+  // ───────────────────── 3) DB에서 후보 가져오기
+  const rows = db.prepare(`
+    SELECT t.*, GROUP_CONCAT(tm.mood) AS moods
+    FROM tracks t
+    LEFT JOIN track_moods tm ON tm.track_id = t.id
+    GROUP BY t.id
+  `).all();
 
-  const ratingsMap = {};
-  if (uid) {
-    db.prepare('SELECT track_id, mood FROM ratings WHERE user_id = ?')
-      .all(uid)
-      .forEach((r) => {
-        ratingsMap[r.track_id] = r.mood;
-      });
-  }
-
+  // 점수 함수 (1,2,3,5,6 번 로직 다 여기 들어감)
   const score = (t) => {
     const moods = (t.moods || '').split(',').filter(Boolean);
     let s = 0;
+
+    // (6) 감정 테스트 결과 mood 가중치
     if (mood && moods.includes(mood)) s += 2;
-    if (ratingsMap[t.id] && ratingsMap[t.id] === mood) s += 3;
-    if (/official|mv|audio/i.test(t.original_title)) s += 0.5;
+
+    // (1 + 6) 최근 청취 경향 trendMood 가중치
+    if (trendMood && moods.includes(trendMood)) s += 1.5;
+
+    // (tone) 설문에서 선택한 음악 분위기 가중치
+    if (tone) {
+    if (tone === 'boost') {
+      // 🎶 기분이 더 좋아지는 → happy / energetic 곡을 우선
+      if (moods.includes('happy'))     s += 1.0;
+      if (moods.includes('energetic')) s += 1.0;
+    } else if (tone === 'soothe') {
+      // 🌙 마음을 달래주는 → sad / calm 곡에 가중치
+      if (moods.includes('sad'))  s += 1.0;
+      if (moods.includes('calm')) s += 1.0;
+    } else if (tone === 'energy') {
+      // ⚡ 힘이 나는 → energetic 강하게, happy 조금
+      if (moods.includes('energetic')) s += 1.5;
+      if (moods.includes('happy'))     s += 0.5;
+    } else if (tone === 'breeze') {
+      // ☁️ 아무 생각 없이 듣는 → calm 위주, happy 살짝
+      if (moods.includes('calm'))  s += 0.8;
+      if (moods.includes('happy')) s += 0.4;
+    } else if (tone === 'focus') {
+      // 🧘 집중하기 좋은 → calm 위주 (너무 신나는 건 굳이 안 올려줌)
+      if (moods.includes('calm')) s += 1.2;
+    }
+  }
+
+    // (2) 내가 이 곡을 직접 평가한 적 있으면 가산점
+    if (ratingsMap[t.id]) {
+      s += 1; // 평가한 적 있는 것 자체에 +1
+      if (mood && ratingsMap[t.id] === mood) s += 2;
+    }
+
+    // (2) 자주 들은 곡이면 추가 가산점 (최대 +2)
+    const wc = watchCountMap[t.id] || 0;
+    if (wc > 0) {
+      s += Math.min(2, 0.5 * wc);
+    }
+
+    // (5) 아티스트 기반 가산점
+    if (topArtist && t.artist === topArtist) {
+      s += 1.5; // 최애 아티스트
+    }
+    if (similarArtistSet.size && similarArtistSet.has(t.artist)) {
+      s += 1;   // 비슷한 아티스트
+    }
+
+    // (3) 스킵 패널티 – 많이 스킵한 곡이면 점수 깎기 (최대 -3)
+    const sc = skipMap[t.id] || 0;
+    if (sc > 0) {
+      s -= Math.min(3, sc * 1.5);
+    }
+
+    // 기존 품질 보정: official / mv / audio 같은 키워드가 있으면 약간 플러스
+    if (/official|mv|audio/i.test(t.original_title || t.originalTitle || '')) {
+      s += 0.5;
+    }
+
     return s;
   };
 
-  const sorted = rows.sort((a, b) => score(b) - score(a));
-  res.json({ items: sorted.slice(0, 20) });
+  const sortedDb = rows.sort((a, b) => score(b) - score(a));
+
+  // ───────────────────── 4) YouTube + DB 결과 병합
+  const MIN_RECS = 15;
+
+  // 1) 유튜브 결과가 충분하면 그냥 그걸로
+  if (ytItems.length >= MIN_RECS) {
+    return res.json({ items: ytItems });
+  }
+
+  // 2) 유튜브 + DB 섞어서 20개까지 채우기
+  let merged = [...ytItems];
+  const seen = new Set(ytItems.map((t) => String(t.id)));
+
+  for (const t of sortedDb) {
+    if (merged.length >= 20) break;
+    if (seen.has(String(t.id))) continue;
+    merged.push(t);
+    seen.add(String(t.id));
+  }
+
+  if (merged.length) {
+    return res.json({ items: merged });
+  }
+
+  // 3) 정말 아무 것도 없으면 DB TOP 20이라도
+  return res.json({ items: sortedDb.slice(0, 20) });
 });
+
+
 
 // ───────────────────────────────────────────────────────────────
 // 감정 라벨 & 시청 기록
@@ -705,6 +1073,28 @@ app.post('/api/watch', (req, res) => {
   res.json({ ok: true });
 });
 
+
+app.post('/api/skip', (req, res) => {
+  const user = getUser(req);
+  const { trackId, seconds } = req.body || {};
+  if (!trackId) return res.status(400).json({ error: 'trackId required' });
+
+  // 비로그인 유저는 그냥 무시 (익명)
+  if (!user) {
+    return res.json({ ok: true, anonymous: true });
+  }
+
+  const sec = Math.max(0, Math.round(Number(seconds) || 0));
+
+  db.prepare(`
+    INSERT INTO skips (user_id, track_id, seconds, created_at)
+    VALUES (?, ?, ?, strftime('%s','now'))
+  `).run(user.id, trackId, sec);
+
+  res.json({ ok: true });
+});
+
+
 // ───────────────────────────────────────────────────────────────
 // 재생목록 + 좋아요
 // ───────────────────────────────────────────────────────────────
@@ -746,20 +1136,23 @@ app.post('/api/playlists', (req, res) => {
   const user = getUser(req);
   if (!user) return res.status(401).json({ error: 'login required' });
 
-  const { title, isPublic } = req.body || {};
+  // 🔥 themeColor 같이 받기
+  const { title, isPublic, themeColor } = req.body || {};
   if (!title) return res.status(400).json({ error: 'title required' });
 
   const r = db
     .prepare(
       `
-      INSERT INTO playlists (user_id, title, is_public, created_at)
-      VALUES (?, ?, ?, strftime('%s','now'))
+      INSERT INTO playlists (user_id, title, is_public, theme_color, created_at)
+      VALUES (?, ?, ?, ?, strftime('%s','now'))
     `,
     )
-    .run(user.id, title, isPublic ? 1 : 0);
+    // 🔥 값 없으면 기본 accent 색으로
+    .run(user.id, title, isPublic ? 1 : 0, themeColor || '#22d3ee');
 
   res.json({ ok: true, id: r.lastInsertRowid });
 });
+
 
 // 재생목록에 트랙 추가
 app.post('/api/playlist/items', (req, res) => {
@@ -803,6 +1196,119 @@ app.delete('/api/playlist/items', (req, res) => {
   ).run(playlistId, trackId);
 
   res.json({ ok: true });
+});
+
+// 재생목록 삭제
+app.delete('/api/playlists/:id', (req, res) => {
+  const user = getUser(req);
+  if (!user) return res.status(401).json({ error: 'login required' });
+
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: 'invalid id' });
+
+  // 내가 만든 재생목록인지 확인
+  const pl = db
+    .prepare('SELECT id, user_id FROM playlists WHERE id = ?')
+    .get(id);
+
+  if (!pl) {
+    return res.status(404).json({ error: 'not found' });
+  }
+  if (pl.user_id !== user.id) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+
+  // 연관된 항목들 같이 정리 (외래키 ON DELETE CASCADE 안 써도 안전하게)
+  const tx = db.transaction((playlistId) => {
+    db.prepare('DELETE FROM playlist_items WHERE playlist_id = ?').run(playlistId);
+    db.prepare('DELETE FROM playlist_likes WHERE playlist_id = ?').run(playlistId);
+    db.prepare('DELETE FROM playlists WHERE id = ?').run(playlistId);
+  });
+
+  try {
+    tx(id);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /api/playlists/:id ERROR', err);
+    return res.status(500).json({ error: 'internal error' });
+  }
+});
+
+// 재생목록 테마 색 변경
+app.patch('/api/playlists/:id/theme', (req, res) => {
+  const user = getUser(req);
+  if (!user) return res.status(401).json({ error: 'login required' });
+
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: 'invalid id' });
+
+  const pl = db
+    .prepare('SELECT id, user_id FROM playlists WHERE id = ?')
+    .get(id);
+
+  if (!pl) return res.status(404).json({ error: 'not found' });
+  if (pl.user_id !== user.id) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+
+  let { themeColor } = req.body || {};
+  if (typeof themeColor !== 'string' || !themeColor.trim()) {
+    return res.status(400).json({ error: 'themeColor required' });
+  }
+  themeColor = themeColor.trim();
+
+  // 간단 HEX 검증 (#RRGGBB 형식만 허용)
+  if (!/^#[0-9a-fA-F]{6}$/.test(themeColor)) {
+    return res.status(400).json({ error: 'invalid color' });
+  }
+
+  db.prepare(
+    `UPDATE playlists SET theme_color = ? WHERE id = ?`
+  ).run(themeColor, id);
+
+  return res.json({ ok: true, themeColor });
+});
+
+
+
+// 공개 재생목록 (최근 / 인기)
+app.get('/api/playlists/public', (req, res) => {
+  const sort = req.query.sort === 'popular' ? 'popular' : 'recent';
+  const limit = Number(req.query.limit || 20) || 20;
+
+  const orderBy =
+    sort === 'popular'
+      ? 'likes DESC, p.created_at DESC'
+      : 'p.created_at DESC';
+
+  const lists = db
+    .prepare(
+      `
+      SELECT
+        p.id,
+        p.user_id,
+        p.title,
+        p.is_public,
+        p.theme_color,
+        p.created_at,
+        u.username AS owner_name,
+        (SELECT COUNT(*) FROM playlist_likes pl WHERE pl.playlist_id = p.id) AS likes
+      FROM playlists p
+      JOIN users u ON u.id = p.user_id
+      WHERE p.is_public = 1
+      ORDER BY ${orderBy}
+      LIMIT ?
+    `,
+    )
+    .all(limit);
+
+  const items = lists.map((pl) => ({
+    ...pl,
+    is_public: !!pl.is_public,
+    items: playlistItemsStmt.all(pl.id),
+  }));
+
+  res.json({ items });
 });
 
 // 특정 재생목록 상세
@@ -876,44 +1382,6 @@ app.post('/api/playlists/:id/like', (req, res) => {
   res.json({ ok: true, liked: !likedRow, likes });
 });
 
-// 공개 재생목록 (최근 / 인기)
-app.get('/api/playlists/public', (req, res) => {
-  const sort = req.query.sort === 'popular' ? 'popular' : 'recent';
-  const limit = Number(req.query.limit || 20) || 20;
-
-  const orderBy =
-    sort === 'popular'
-      ? 'likes DESC, p.created_at DESC'
-      : 'p.created_at DESC';
-
-  const lists = db
-    .prepare(
-      `
-      SELECT
-        p.id,
-        p.user_id,
-        p.title,
-        p.is_public,
-        p.created_at,
-        u.username AS owner_name,
-        (SELECT COUNT(*) FROM playlist_likes pl WHERE pl.playlist_id = p.id) AS likes
-      FROM playlists p
-      JOIN users u ON u.id = p.user_id
-      WHERE p.is_public = 1
-      ORDER BY ${orderBy}
-      LIMIT ?
-    `,
-    )
-    .all(limit);
-
-  const items = lists.map((pl) => ({
-    ...pl,
-    is_public: !!pl.is_public,
-    items: playlistItemsStmt.all(pl.id),
-  }));
-
-  res.json({ items });
-});
 
 // ───────────────────────────────────────────────────────────────
 // 헬스체크 & 에러 핸들러
