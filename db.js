@@ -1,76 +1,106 @@
-// db.js
+/**
+ * db.js — Emotion Playlist의 로컬 SQLite DB 초기화 파일 (better-sqlite3)
+ * ======================================================================================
+ * 역할
+ *   1) data/app.db 파일을 생성/연결하고
+ *   2) 서비스에 필요한 모든 테이블(users, tracks, track_moods, ratings, playlists, playlist_items,
+ *      playlist_likes, watch_history, skips)을 만든 다음
+ *   3) 오프라인/쿼터초과 상황에서도 검색·추천이 가능하도록 더미 트랙(seedTracks)을 넣는다.
+ *
+ * 선택 이유: better-sqlite3
+ *   - Node에서 간단하고 빠른 동기 API, 트랜잭션 사용이 쉬움
+ *   - 서버 규모가 작고 단일 프로세스일 때 운영이 간편
+ *
+ * 호출 타이밍
+ *   - server.js에서 `import db from './db.js'` 하는 순간 즉시 실행된다(모듈 로드시 즉시 초기화).
+ *   - CLI로 `node db.js --seed`만 따로 실행해도 초기화 후 종료한다.
+ */
+
 import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+// ESM 환경에서 __dirname 대체: 현재 파일 경로 → 디렉터리
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// DB 파일 경로: 프로젝트/backEnd/data/app.db
 const dataDir = path.join(__dirname, 'data');
 const dbPath = path.join(dataDir, 'app.db');
 
+// data 폴더가 없으면 생성
 fs.mkdirSync(dataDir, { recursive: true });
 
+// DB 연결(파일이 없으면 생성). 모듈 전역에서 단일 연결로 사용.
 const db = new Database(dbPath);
 
-// 기본 설정 + 테이블 생성
+// ============================================================================
+// PRAGMA + 스키마(테이블) 생성
+//   - PRAGMA journal_mode=WAL : 동시성/성능 개선(쓰기 중에도 읽기 지연이 적음)
+//   - 테이블 간 핵심 관계
+//       users(1) — ratings(*), watch_history(*), skips(*), playlists(*)
+//       playlists(1) — playlist_items(*), playlist_likes(*)
+//       tracks(1) — track_moods(*), playlist_items(*)
+//   - ratings/watch_history/skips는 track_id를 문자열로 저장(YouTube 실시간 결과도 기록 가능)
+// ============================================================================
 db.exec(`
 PRAGMA journal_mode = WAL;
 
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  username TEXT UNIQUE NOT NULL,
-  password_hash TEXT NOT NULL,
-  email TEXT
+  username TEXT UNIQUE NOT NULL,        -- 로그인 식별자(쿠키에 저장)
+  password_hash TEXT NOT NULL,          -- 비밀번호 SHA-256 해시(평문 저장 금지)
+  email TEXT                             -- 선택
 );
 
 CREATE TABLE IF NOT EXISTS tracks (
-  id TEXT PRIMARY KEY,          -- 'youtube:VIDEO_ID' 또는 임의의 seed id
-  source TEXT NOT NULL,         -- 'YouTube'
-  title TEXT NOT NULL,
-  original_title TEXT NOT NULL,
-  artist TEXT NOT NULL,
-  thumb TEXT NOT NULL,
-  url TEXT NOT NULL,
-  genre TEXT NOT NULL,          -- kpop / jpop / pop / rock 등
-  nation TEXT NOT NULL          -- kr / jp / us / etc
+  id TEXT PRIMARY KEY,                   -- 'youtube:VIDEO_ID' 또는 'seed:...' (문자열 PK)
+  source TEXT NOT NULL,                  -- 'YouTube' 등 데이터 출처
+  title TEXT NOT NULL,                   -- 화면에 보이는 최종 타이틀(채널 — 제목)
+  original_title TEXT NOT NULL,          -- 원문 제목(랭킹/품질보정에 사용)
+  artist TEXT NOT NULL,                  -- 채널명=가수명으로 간주
+  thumb TEXT NOT NULL,                   -- 썸네일 URL
+  url TEXT NOT NULL,                     -- 유튜브 URL
+  genre TEXT NOT NULL,                   -- kpop/jpop/pop/rock...
+  nation TEXT NOT NULL                   -- kr/jp/us/etc (랭킹/필터 보조)
 );
 
 CREATE TABLE IF NOT EXISTS track_moods (
-  track_id TEXT NOT NULL,
-  mood TEXT NOT NULL,
+  track_id TEXT NOT NULL,                -- tracks.id 참조
+  mood TEXT NOT NULL,                    -- happy/sad/calm/angry/energetic
   PRIMARY KEY (track_id, mood),
   FOREIGN KEY (track_id) REFERENCES tracks(id)
 );
 
 CREATE TABLE IF NOT EXISTS ratings (
-  user_id   INTEGER NOT NULL,
-  track_id  TEXT    NOT NULL,
-  mood      TEXT    NOT NULL,
+  user_id   INTEGER NOT NULL,            -- 누가
+  track_id  TEXT    NOT NULL,            -- 어떤 곡(문자열 PK)
+  mood      TEXT    NOT NULL,            -- 감정 라벨
   created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
-  PRIMARY KEY (user_id, track_id),      -- ★ 복합 PK
+  PRIMARY KEY (user_id, track_id),       -- 같은 곡 라벨은 업서트
   FOREIGN KEY (user_id) REFERENCES users(id)
-  -- track_id 쪽 FK는 일부러 안 건다 (YouTube 실시간 곡도 저장해야 하니까)
+  -- track_id FK는 생략: 실시간 검색 결과(아직 tracks 미삽입)도 기록 가능하게 유연성 확보
 );
 
 CREATE TABLE IF NOT EXISTS playlists (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id INTEGER NOT NULL,
-  title TEXT NOT NULL,
-  is_public INTEGER NOT NULL DEFAULT 0,
-  theme_color TEXT NOT NULL DEFAULT '#22d3ee',
+  user_id INTEGER NOT NULL,              -- 소유자
+  title TEXT NOT NULL,                   -- 제목
+  is_public INTEGER NOT NULL DEFAULT 0,  -- 공개/비공개
+  theme_color TEXT NOT NULL DEFAULT '#22d3ee', -- 카드 색(프론트 스타일에 사용)
   created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS playlist_items (
   playlist_id INTEGER NOT NULL,
-  track_id TEXT NOT NULL,
-  position INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (playlist_id, track_id),
+  track_id TEXT NOT NULL,                -- 어떤 곡이 목록에 들어갔는지
+  position INTEGER NOT NULL DEFAULT 0,   -- 순서
+  PRIMARY KEY (playlist_id, track_id),   -- 같은 곡 중복 방지
   FOREIGN KEY (playlist_id) REFERENCES playlists(id)
 );
 
--- ⭐ 재생목록 좋아요 테이블 (새로 추가)
+-- 재생목록 좋아요(공개 피드 인기순 정렬에 사용)
 CREATE TABLE IF NOT EXISTS playlist_likes (
   user_id INTEGER NOT NULL,
   playlist_id INTEGER NOT NULL,
@@ -84,11 +114,11 @@ CREATE TABLE IF NOT EXISTS watch_history (
   id        INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id   INTEGER NOT NULL,
   track_id  TEXT    NOT NULL,
-  played_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+  played_at INTEGER NOT NULL DEFAULT (strftime('%s','now')), -- 재생 시각(초 단위)
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
--- ▶ 새로 추가: 스킵 기록
+-- 스킵 기록(몇 초 듣고 넘겼는지). 추천에서 패널티로 반영.
 CREATE TABLE IF NOT EXISTS skips (
   id        INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id   INTEGER NOT NULL,
@@ -99,12 +129,13 @@ CREATE TABLE IF NOT EXISTS skips (
 );
 `);
 
-// --------------------
+// ============================================================================
 // 더미 트랙 시드 데이터
 //  - 장르: kpop / jpop / pop / rock 등
 //  - nation: kr / jp / us / etc
 //  - mood: happy / sad / calm / angry / energetic
-// --------------------
+//  배열 형식: [id, source, title, original_title, artist, thumb, url, moods[], genre, nation]
+// ============================================================================
 const seedTracks = [
   // ───────── 기본 10곡 (기존) ─────────
   [
@@ -228,13 +259,9 @@ const seedTracks = [
     'us'
   ],
 
-  // ───────── 여기서부터 추가 더미 (심리테스트용 풀 확장) ─────────
-  // 기본 전략:
-  //  - 열정/자기계발/힘이 나는 → energetic + (happy/angry) 많이 배치
-  //  - J-POP 쪽은 genre: 'jpop', nation: 'jp'
-  //  - 실제 재생은 url 기준이라, 이미 있는 MV들을 재사용해도 동작은 OK
+  // ───────── 추가 더미 (심리테스트용 풀 확장) ─────────
 
-  // 🔥 energetic + jpop (열정/자기계발 분위기 보강)
+  // 🔥 energetic + jpop 보강
   [
     'seed:jpop_energy_01',
     'YouTube',
@@ -296,7 +323,7 @@ const seedTracks = [
     'jp'
   ],
 
-  // 😀 happy 쪽 보강
+  // 😀 happy 보강
   [
     'seed:happy_kpop_01',
     'YouTube',
@@ -334,7 +361,7 @@ const seedTracks = [
     'us'
   ],
 
-  // 😢 sad 쪽 보강
+  // 😢 sad 보강
   [
     'seed:sad_pop_01',
     'YouTube',
@@ -360,7 +387,7 @@ const seedTracks = [
     'us'
   ],
 
-  // 😡 angry / 열받을 때 듣는 락
+  // 😡 angry / 락
   [
     'seed:angry_rock_01',
     'YouTube',
@@ -386,7 +413,7 @@ const seedTracks = [
     'us'
   ],
 
-  // 😌 calm / 힐링용 보강
+  // 😌 calm / 힐링
   [
     'seed:calm_kpop_01',
     'YouTube',
@@ -413,6 +440,7 @@ const seedTracks = [
   ]
 ];
 
+// 빠른 삽입을 위한 prepared statements (SQL 인젝션 방지/성능)
 const insertTrack = db.prepare(`
   INSERT OR IGNORE INTO tracks
   (id, source, title, original_title, artist, thumb, url, genre, nation)
@@ -424,15 +452,18 @@ const insertMood = db.prepare(`
   VALUES (?, ?)
 `);
 
+// seed 주입: 중복은 무시(INSERT OR IGNORE)
 for (const t of seedTracks) {
   const [id, source, title, original_title, artist, thumb, url, moods, genre, nation] = t;
   insertTrack.run(id, source, title, original_title, artist, thumb, url, genre, nation);
   moods.forEach(m => insertMood.run(id, m));
 }
 
+// 독립 실행 모드 지원: `node db.js --seed`
 if (process.argv.includes('--seed')) {
   console.log('DB initialized at', dbPath);
   process.exit(0);
 }
 
+// server.js에서 사용할 DB 인스턴스 export
 export default db;
